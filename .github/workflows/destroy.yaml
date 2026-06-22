@@ -1,0 +1,62 @@
+
+name: Destruir toda la infraestructura
+
+on:
+  workflow_dispatch:        # SOLO manual, desde la pestana Actions
+
+env:
+  AWS_REGION: us-east-1
+  CLUSTER_NAME: microservicios-eks
+  NODEGROUP_NAME: nodos-microservicios
+  VPC_STACK: microservicios-vpc
+
+jobs:
+  destroy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Configurar credenciales de AWS
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Instalar kubectl
+        run: |
+          curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+          chmod +x kubectl && sudo mv kubectl /usr/local/bin/kubectl
+
+      - name: 1. Borrar el LoadBalancer (frontend)
+        run: |
+          if aws eks describe-cluster --name "$CLUSTER_NAME" --region "$AWS_REGION" >/dev/null 2>&1; then
+            aws eks update-kubeconfig --name "$CLUSTER_NAME" --region "$AWS_REGION"
+            kubectl delete svc casino-frontend --ignore-not-found
+            echo "Esperando 30s a que AWS elimine el balanceador..."
+            sleep 30
+          fi
+
+      - name: 2. Borrar el grupo de nodos
+        run: |
+          if aws eks describe-nodegroup --cluster-name "$CLUSTER_NAME" --nodegroup-name "$NODEGROUP_NAME" --region "$AWS_REGION" >/dev/null 2>&1; then
+            aws eks delete-nodegroup --cluster-name "$CLUSTER_NAME" --nodegroup-name "$NODEGROUP_NAME" --region "$AWS_REGION"
+            aws eks wait nodegroup-deleted --cluster-name "$CLUSTER_NAME" --nodegroup-name "$NODEGROUP_NAME" --region "$AWS_REGION"
+          fi
+
+      - name: 3. Borrar el cluster
+        run: |
+          if aws eks describe-cluster --name "$CLUSTER_NAME" --region "$AWS_REGION" >/dev/null 2>&1; then
+            aws eks delete-cluster --name "$CLUSTER_NAME" --region "$AWS_REGION"
+            aws eks wait cluster-deleted --name "$CLUSTER_NAME" --region "$AWS_REGION"
+          fi
+
+      - name: 4. Borrar la red (CloudFormation)
+        run: |
+          aws cloudformation delete-stack --stack-name "$VPC_STACK" --region "$AWS_REGION"
+          aws cloudformation wait stack-delete-complete --stack-name "$VPC_STACK" --region "$AWS_REGION"
+
+      - name: 5. Borrar los repositorios de ECR
+        run: |
+          for svc in casino-frontend casino-backend bonos-service apuestas-service estadisticas-service; do
+            aws ecr delete-repository --repository-name "$svc" --region "$AWS_REGION" --force || true
+          done

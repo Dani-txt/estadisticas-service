@@ -1,0 +1,72 @@
+name: Desplegar microservicios en EKS (CI/CD)
+
+on:
+  push:
+    branches: [ deploy ]
+  workflow_dispatch:        # tambien se lanza a mano desde la pestana Actions
+
+env:
+  AWS_REGION: us-east-1
+  CLUSTER_NAME: microservicios-eks
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 1. Descargar el codigo del repo
+        uses: actions/checkout@v4
+
+      - name: 2. Configurar credenciales de AWS (temporales del lab)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: 3. Login en Amazon ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: 4. Construir y subir las imágenes
+        env:
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          for svc in casino-frontend casino-backend bonos-service apuestas-service estadisticas-service; do
+            docker build -t "$REGISTRY/$svc:$IMAGE_TAG" -t "$REGISTRY/$svc:latest" "./$svc"
+            docker push "$REGISTRY/$svc:$IMAGE_TAG"
+            docker push "$REGISTRY/$svc:latest"
+          done
+
+      - name: 5. Instalar kubectl en el runner
+        run: |
+          curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+          chmod +x kubectl
+          sudo mv kubectl /usr/local/bin/kubectl
+
+      - name: 6. Conectar kubectl al cluster
+        run: aws eks update-kubeconfig --name "$CLUSTER_NAME" --region "$AWS_REGION"
+
+      - name: 7. Desplegar microservicios en EKS
+        env:
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          for svc in casino-frontend casino-backend bonos-service apuestas-service estadisticas-service; do
+            sed -i "s|<ACCOUNT_ID>|$ACCOUNT_ID|g; s|<REGION>|$AWS_REGION|g; s|:latest|:$IMAGE_TAG|g" "$svc/k8s/deployment.yaml"
+            kubectl apply -f "$svc/k8s/deployment.yaml"
+            kubectl apply -f "$svc/k8s/service.yaml"
+          done
+          kubectl rollout status deployment/casino-frontend --timeout=180s
+
+      - name: 8. Esperar al rollout y mostrar el resultado
+        run: |
+          kubectl rollout status deployment/casino-frontend --timeout=300s
+          kubectl rollout status deployment/casino-backend --timeout=300s
+          kubectl rollout status deployment/bonos-service --timeout=300s
+          kubectl rollout status deployment/apuestas-service --timeout=300s
+          kubectl rollout status deployment/estadisticas-service --timeout=300s
+          kubectl get pods -o wide
+          echo "URL pública del LoadBalancer (frontend):"
+          kubectl get svc casino-frontend -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'; echo

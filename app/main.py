@@ -15,7 +15,7 @@ from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .auth import usuario_actual
-from .db import conexion, dict_cursor, esperar_bd
+from .db import conexion, dict_cursor, esperar_bd, ping
 
 
 @asynccontextmanager
@@ -96,6 +96,18 @@ def mis_estadisticas(usuario: dict = Depends(usuario_actual)):
         "por_tipo": por_tipo,
         "linea_saldo": linea,
     }
+
+@app.get("/livez")
+def livez():
+    """Liveness: el proceso está vivo. NO depende de la BD."""
+    return {"alive": True, "service": "bonos-service"}
+
+@app.get("/readyz")
+def readyz():
+    """Readiness: listo para tráfico solo si Postgres responde."""
+    if not ping():
+        raise HTTPException(status_code=503, detail={"ready": False, "db": "down"})
+    return {"ready": True, "db": "up", "service": "bonos-service"}
 
 
 @app.get("/api/estadisticas/globales")
