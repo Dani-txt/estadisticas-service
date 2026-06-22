@@ -100,14 +100,14 @@ def mis_estadisticas(usuario: dict = Depends(usuario_actual)):
 @app.get("/livez")
 def livez():
     """Liveness: el proceso está vivo. NO depende de la BD."""
-    return {"alive": True, "service": "bonos-service"}
+    return {"alive": True, "service": "estadisticas-service"}
 
 @app.get("/readyz")
 def readyz():
     """Readiness: listo para tráfico solo si Postgres responde."""
     if not ping():
         raise HTTPException(status_code=503, detail={"ready": False, "db": "down"})
-    return {"ready": True, "db": "up", "service": "bonos-service"}
+    return {"ready": True, "db": "up", "service": "estadisticas-service"}
 
 
 @app.get("/api/estadisticas/globales")
