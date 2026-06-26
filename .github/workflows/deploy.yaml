@@ -3,11 +3,11 @@ name: Desplegar microservicios en EKS (CI/CD)
 on:
   push:
     branches: [ deploy ]
-  workflow_dispatch:        # tambien se lanza a mano desde la pestana Actions
+  workflow_dispatch:        # también se lanza a mano desde la pestaña Actions
 
 env:
-  AWS_REGION: ${{ secrets.AWS_REGION}}
-  CLUSTER_NAME: ${{ Secrets.EKS_CLUSTER_NAME}}
+  AWS_REGION: ${{ secrets.AWS_REGION }}
+  CLUSTER_NAME: ${{ secrets.EKS_CLUSTER_NAME }} # Corregido a minúscula
 
 jobs:
   deploy:
@@ -25,12 +25,13 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
 
       - name: 3. Login en Amazon ECR
-        id: ecr
+        id: login-ecr # Le damos un ID claro para usar sus outputs
         uses: aws-actions/amazon-ecr-login@v2
 
       - name: 4. Construir y subir la imagen
         env:
-          REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com
+          # Usamos el output automático del paso anterior, eliminando la necesidad de AWS_ACCOUNT_ID
+          REGISTRY: ${{ steps.login-ecr.outputs.registry }}
           REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
           IMAGE_TAG: ${{ github.sha }}
         run: |
@@ -45,20 +46,22 @@ jobs:
           sudo mv kubectl /usr/local/bin/kubectl
 
       - name: 6. Conectar kubectl al cluster
-        run: aws eks update-kubeconfig --name "${{ secrets.EKS_CLUSTER_NAME }}" --region "${{ secrets.AWS_REGION }}"
+        run: aws eks update-kubeconfig --name "${{ env.CLUSTER_NAME }}" --region "${{ env.AWS_REGION }}"
 
       - name: 7. Desplegar en EKS
         env:
-          REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com
+          REGISTRY: ${{ steps.login-ecr.outputs.registry }}
           REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
           IMAGE_TAG: ${{ github.sha }}
         run: |
-          sed -i "s|<ACCOUNT_ID>|${{ secrets.AWS_ACCOUNT_ID }}|g; s|<REGION>|${{ secrets.AWS_REGION }}|g; s|:latest|:$IMAGE_TAG|g" k8s/deployment.yaml
+          # Modificado para que reemplace correctamente usando el formato del registro dinámico
+          sed -i "s|image:.*|image: $REGISTRY/$REPOSITORY:$IMAGE_TAG|g" k8s/deployment.yaml
           kubectl apply -f k8s/deployment.yaml
           kubectl apply -f k8s/service.yaml
           kubectl apply -f k8s/hpa.yaml
 
       - name: 8. Verificar rollout
         run: |
+          # Nota: Asegúrate de que el deployment en tu archivo yaml se llame exactamente así, o cámbialo por apuestas-service si estás probando ese.
           kubectl rollout status deployment/estadisticas-service --timeout=300s
           kubectl get pods -l app=estadisticas-service -o wide
