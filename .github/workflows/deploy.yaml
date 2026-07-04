@@ -10,11 +10,8 @@ env:
   CLUSTER_NAME: microservicios-eks
 
 jobs:
-  # ===========================================================
-  # ETAPA 1 - PRUEBAS UNITARIAS
-  # ===========================================================
   test:
-    name: Pruebas unitarias (pytest estadisticas-service)
+    name: Pruebas unitarias (pytest)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -23,13 +20,10 @@ jobs:
         with:
           python-version: '3.12'
       - name: Instalar dependencias
-        run: pip install -r estadisticas-service/requirements.txt
+        run: pip install -r requirements.txt 
       - name: Ejecutar pruebas
-        run: pytest estadisticas-service
+        run: pytest 
 
-  # ===========================================================
-  # ETAPA 2 - BUILD DE IMÁGENES
-  # ===========================================================
   build:
     name: Construir imagen Docker
     runs-on: ubuntu-latest
@@ -44,11 +38,8 @@ jobs:
           REGISTRY: ${{ steps.ecr.outputs.registry }}
           IMAGE_TAG: ${{ github.sha }}
         run: |
-          docker build -t "$REGISTRY/estadisticas-service:$IMAGE_TAG" -t "$REGISTRY/estadisticas-service:latest" ./estadisticas-service
+          docker build -t "$REGISTRY/estadisticas-service:$IMAGE_TAG" -t "$REGISTRY/estadisticas-service:latest" .  
 
-  # ===========================================================
-  # ETAPA 3 - PUSH A ECR
-  # ===========================================================
   push:
     name: Push a Amazon ECR
     runs-on: ubuntu-latest
@@ -66,9 +57,6 @@ jobs:
           docker push "$REGISTRY/estadisticas-service:$IMAGE_TAG"
           docker push "$REGISTRY/estadisticas-service:latest"
 
-  # ===========================================================
-  # ETAPA 4 - DEPLOY EN EKS
-  # ===========================================================
   deploy:
     name: Deploy en EKS
     runs-on: ubuntu-latest
@@ -94,8 +82,8 @@ jobs:
           IMAGE_TAG: ${{ github.sha }}
         run: |
           ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-          sed -i "s|<ACCOUNT_ID>|$ACCOUNT_ID|g; s|<REGION>|$AWS_REGION|g; s|estadisticas-service:latest|estadisticas-service:$IMAGE_TAG|g" estadisticas-service/k8s/deployment.yaml
-          kubectl apply -f estadisticas-service/k8s/deployment.yaml
-          kubectl apply -f estadisticas-service/k8s/service.yaml
+          sed -i "s|<ACCOUNT_ID>|$ACCOUNT_ID|g; s|<REGION>|$AWS_REGION|g; s|estadisticas-service:latest|estadisticas-service:$IMAGE_TAG|g" k8s/deployment.yaml  
+          kubectl apply -f k8s/deployment.yaml  
+          kubectl apply -f k8s/service.yaml  
       - name: Verificar rollout
         run: kubectl rollout status deployment/estadisticas-service --timeout=180s
