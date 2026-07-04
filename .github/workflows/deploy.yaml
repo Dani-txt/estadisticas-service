@@ -23,7 +23,7 @@ jobs:
         with:
           python-version: '3.12'
       - name: Instalar dependencias
-        run: pip install -r estadisticas-service\requirements.txt
+        run: pip install -r estadisticas-service/requirements.txt
       - name: Ejecutar pruebas
         run: pytest estadisticas-service
 
