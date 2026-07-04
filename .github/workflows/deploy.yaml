@@ -23,9 +23,9 @@ jobs:
         with:
           python-version: '3.12'
       - name: Instalar dependencias
-        run: pip install -r estadisticas-service/requirements.txt
+        run: pip install -r ESTADISTICAS-SERVICE/requirements.txt
       - name: Ejecutar pruebas
-        run: pytest estadisticas-service
+        run: pytest ESTADISTICAS-SERVICE
 
   # ===========================================================
   # ETAPA 2 - BUILD DE IMÁGENES
@@ -44,7 +44,7 @@ jobs:
           REGISTRY: ${{ steps.ecr.outputs.registry }}
           IMAGE_TAG: ${{ github.sha }}
         run: |
-          docker build -t "$REGISTRY/estadisticas-service:$IMAGE_TAG" -t "$REGISTRY/estadisticas-service:latest" ./estadisticas-service
+          docker build -t "$REGISTRY/estadisticas-service:$IMAGE_TAG" -t "$REGISTRY/estadisticas-service:latest" ./ESTADISTICAS-SERVICE
 
   # ===========================================================
   # ETAPA 3 - PUSH A ECR
@@ -94,8 +94,8 @@ jobs:
           IMAGE_TAG: ${{ github.sha }}
         run: |
           ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-          sed -i "s|<ACCOUNT_ID>|$ACCOUNT_ID|g; s|<REGION>|$AWS_REGION|g; s|estadisticas-service:latest|estadisticas-service:$IMAGE_TAG|g" estadisticas-service/k8s/deployment.yaml
-          kubectl apply -f estadisticas-service/k8s/deployment.yaml
-          kubectl apply -f estadisticas-service/k8s/service.yaml
+          sed -i "s|<ACCOUNT_ID>|$ACCOUNT_ID|g; s|<REGION>|$AWS_REGION|g; s|estadisticas-service:latest|estadisticas-service:$IMAGE_TAG|g" ESTADISTICAS-SERVICE/k8s/deployment.yaml
+          kubectl apply -f ESTADISTICAS-SERVICE/k8s/deployment.yaml
+          kubectl apply -f ESTADISTICAS-SERVICE/k8s/service.yaml
       - name: Verificar rollout
         run: kubectl rollout status deployment/estadisticas-service --timeout=180s
